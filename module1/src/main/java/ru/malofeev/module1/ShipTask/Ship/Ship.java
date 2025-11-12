@@ -14,7 +14,6 @@ public class Ship {
     private TypeShip type;
     private int size;
 
-
     public static Ship generate(String name, int number){
         String localName = name + number;
         TypeShip localType = TypeShip.values()[ThreadLocalRandom.current().nextInt(TypeShip.values().length)];

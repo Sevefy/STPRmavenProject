@@ -1,45 +1,51 @@
+// Main.java
 package ru.malofeev.module1.ShipTask;
 
 import ru.malofeev.module1.ShipTask.Ship.Ship;
 import ru.malofeev.module1.ShipTask.Ship.TypeShip;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.*;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[] args) {
         int totalShipsToGenerate = 20;
-        long minGenerationInterval = 500;
-        long maxGenerationInterval = 2000;
-        long unloadTimePerUnit = 1000;
+        long minGenerationInterval = Long.parseLong(args[0]);
+        long maxGenerationInterval = Long.parseLong(args[1]);
+        long unloadTimePerUnit = Long.parseLong(args[2]);
+        AtomicInteger counter = new AtomicInteger();
 
-        BlockingQueue<Ship> harbor = new ArrayBlockingQueue<>(5);
-        ExecutorService executor = Executors.newFixedThreadPool(4);
+        // Общий ресурс: список кораблей в порту (ожидание + разгрузка)
+        List<Ship> port = Collections.synchronizedList(new ArrayList<>());
+        Object monitor = new Object(); // Объект-монитор для синхронизации
 
-        Generator generator = new Generator(harbor, totalShipsToGenerate,
-                minGenerationInterval, maxGenerationInterval, "SHIP_");
-        executor.submit(generator);
+        List<Thread> threads = new ArrayList<>();
+
+        Generator generator = new Generator(port, monitor, totalShipsToGenerate,
+                minGenerationInterval, maxGenerationInterval, "SHIP_", counter);
+        Thread generatorThread = new Thread(generator, "Generator");
+        threads.add(generatorThread);
+        generatorThread.start();
 
         List<Dock> docks = Arrays.asList(
-                new Dock("Причал Хлеб", TypeShip.Bread, harbor, unloadTimePerUnit),
-                new Dock("Причал Бананы", TypeShip.Banana, harbor, unloadTimePerUnit),
-                new Dock("Причал Одежда", TypeShip.Cloth, harbor, unloadTimePerUnit)
+                new Dock("Причал Хлеб", TypeShip.Bread, port, monitor, unloadTimePerUnit, counter),
+                new Dock("Причал Бананы", TypeShip.Banana, port, monitor, unloadTimePerUnit, counter),
+                new Dock("Причал Одежда", TypeShip.Cloth, port, monitor, unloadTimePerUnit, counter)
         );
 
-        docks.forEach(executor::submit);
+        for (Dock dock : docks) {
+            Thread dockThread = new Thread(dock, dock.getDockName());
+            threads.add(dockThread);
+            dockThread.start();
+        }
 
         try {
-            executor.shutdown(); // Запрещаем новые задачи
-
-            if (!executor.awaitTermination(1, TimeUnit.MINUTES)) {
-                executor.shutdownNow();
+            for (Thread thread : threads) {
+                thread.join();
             }
-
             System.out.println("Все корабли разгружены. Завершение программы.");
-
         } catch (InterruptedException e) {
-            executor.shutdownNow();
+            threads.forEach(Thread::interrupt);
             Thread.currentThread().interrupt();
         }
     }
